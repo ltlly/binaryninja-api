@@ -36,6 +36,7 @@ from . import binaryview
 from . import architecture
 from . import types
 from . import deprecation
+from . import ILSourceLocation
 from .interaction import show_graph_report
 from .commonil import (
     BaseILInstruction, Constant, BinaryOperation, Tailcall, UnaryOperation, Comparison, SSA, Phi, FloatingPoint,
@@ -3733,7 +3734,8 @@ class LowLevelILFunction:
 
 	def expr(
 	    self, operation, a: ExpressionIndex = 0, b: ExpressionIndex = 0, c: ExpressionIndex = 0, d: ExpressionIndex = 0, size: int = 0,
-	    flags: Optional[Union['architecture.FlagWriteTypeName', 'architecture.FlagType', 'architecture.FlagIndex']] = None
+	    flags: Optional[Union['architecture.FlagWriteTypeName', 'architecture.FlagType', 'architecture.FlagIndex']] = None,
+	    loc: ILSourceLocation = None,
 	) -> ExpressionIndex:
 		_flags = architecture.FlagIndex(0)
 		if isinstance(operation, str):
@@ -3750,8 +3752,25 @@ class LowLevelILFunction:
 			_flags = architecture.FlagIndex(0)
 		else:
 			assert False, "flags type unsupported"
-		return ExpressionIndex(core.BNLowLevelILAddExpr(self.handle, operation, size, _flags, a, b, c, d))
-
+		if loc is not None and loc.valid:
+			return ExpressionIndex(
+				core.BNLowLevelILAddExprWithLocation(
+					self.handle,
+					loc.address,
+					loc.sourceOperand,
+					operation,
+					size,
+					_flags,
+					a,
+					b,
+					c,
+					d,
+				)
+			)
+		else:
+			return ExpressionIndex(
+				core.BNLowLevelILAddExpr(self.handle, operation, size, _flags, a, b, c, d)
+			)
 	def get_expr_count(self) -> int:
 		"""
 		``get_expr_count`` gives a the total number of expressions in this IL function
@@ -3780,14 +3799,15 @@ class LowLevelILFunction:
 
 		return LowLevelILInstruction.create(self, index)
 
-	def copy_expr(self, original: LowLevelILInstruction) -> ExpressionIndex:
+	def copy_expr(self, original: LowLevelILInstruction, loc: ILSourceLocation = None) -> ExpressionIndex:
 		"""
 		``copy_expr`` adds an expression to the function which is equivalent to the given expression
 
 		:param LowLevelILInstruction original: the original IL Instruction you want to copy
 		:return: The index of the newly copied expression
 		"""
-		return self.expr(original.operation, original.raw_operands[0], original.raw_operands[1], original.raw_operands[2], original.raw_operands[3], original.size, original.flags)
+		flags = original.flags if original.flags != "" else None
+		return self.expr(original.operation, original.raw_operands[0], original.raw_operands[1], original.raw_operands[2], original.raw_operands[3], original.size, flags, loc)
 
 	def replace_expr(self, original: InstructionOrExpression, new: InstructionOrExpression) -> None:
 		"""
@@ -5221,7 +5241,7 @@ class LowLevelILFunction:
 		"""
 		return self.expr(LowLevelILOperation.LLIL_FCMP_UO, a, b)
 
-	def goto(self, label: LowLevelILLabel) -> ExpressionIndex:
+	def goto(self, label: LowLevelILLabel, loc: ILSourceLocation = None) -> ExpressionIndex:
 		"""
 		``goto`` returns a goto expression which jumps to the provided LowLevelILLabel.
 
@@ -5229,9 +5249,15 @@ class LowLevelILFunction:
 		:return: the ExpressionIndex that jumps to the provided label
 		:rtype: ExpressionIndex
 		"""
+		if loc is not None and loc.valid:
+			return ExpressionIndex(
+				core.BNLowLevelILGotoWithLocation(
+					self.handle, label.handle, loc.address, loc.sourceOperand
+				)
+			)
 		return ExpressionIndex(core.BNLowLevelILGoto(self.handle, label.handle))
 
-	def if_expr(self, operand: ExpressionIndex, t: LowLevelILLabel, f: LowLevelILLabel) -> ExpressionIndex:
+	def if_expr(self, operand: ExpressionIndex, t: LowLevelILLabel, f: LowLevelILLabel,loc: ILSourceLocation = None) -> ExpressionIndex:
 		"""
 		``if_expr`` returns the ``if`` expression which depending on condition ``operand`` jumps to the LowLevelILLabel
 		``t`` when the condition expression ``operand`` is non-zero and ``f`` when it's zero.
@@ -5242,7 +5268,15 @@ class LowLevelILFunction:
 		:return: the ExpressionIndex for the if expression
 		:rtype: ExpressionIndex
 		"""
-		return ExpressionIndex(core.BNLowLevelILIf(self.handle, operand, t.handle, f.handle))
+		if loc is not None and loc.valid:
+			return ExpressionIndex(
+				core.BNLowLevelILIfWithLocation(
+					self.handle, operand, t.handle, f.handle, loc.address, loc.sourceOperand
+				)
+			)
+		return ExpressionIndex(
+			core.BNLowLevelILIf(self.handle, operand, t.handle, f.handle)
+		)
 
 	def mark_label(self, label: LowLevelILLabel) -> None:
 		"""

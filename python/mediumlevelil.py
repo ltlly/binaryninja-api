@@ -38,6 +38,7 @@ from . import variable
 from . import architecture
 from . import binaryview
 from . import types as _types
+from . import ILSourceLocation
 from .interaction import show_graph_report
 from .commonil import (
     BaseILInstruction, Constant, BinaryOperation, UnaryOperation, Comparison, SSA, Phi, FloatingPoint, ControlFlow,
@@ -3418,15 +3419,33 @@ class MediumLevelILFunction:
 
 	def expr(
 	    self, operation: MediumLevelILOperation, a: int = 0, b: int = 0, c: int = 0, d: int = 0, e: int = 0,
-	    size: int = 0
+	    size: int = 0,
+	    loc: ILSourceLocation = None,
 	) -> ExpressionIndex:
 		_operation = operation
 		if isinstance(operation, str):
 			_operation = MediumLevelILOperation[operation]
 		elif isinstance(operation, MediumLevelILOperation):
 			_operation = operation.value
-		return ExpressionIndex(core.BNMediumLevelILAddExpr(self.handle, _operation, size, a, b, c, d, e))
-
+		if loc is not None and loc.valid:
+			return ExpressionIndex(
+				core.BNMediumLevelILAddExprWithLocation(
+					self.handle,
+					_operation,
+					loc.address,
+					loc.sourceOperand,
+					size,
+					a,
+					b,
+					c,
+					d,
+					e,
+				)
+			)
+		return ExpressionIndex(
+			core.BNMediumLevelILAddExpr(
+				self.handle, _operation, size, a, b, c, d, e)
+		)
 	def get_expr_count(self) -> int:
 		"""
 		``get_expr_count`` gives a the total number of expressions in this IL function
@@ -3455,14 +3474,14 @@ class MediumLevelILFunction:
 
 		return MediumLevelILInstruction.create(self, index)
 
-	def copy_expr(self, original: MediumLevelILInstruction) -> ExpressionIndex:
+	def copy_expr(self, original: MediumLevelILInstruction, loc: ILSourceLocation = None) -> ExpressionIndex:
 		"""
 		``copy_expr`` adds an expression to the function which is equivalent to the given expression
 
 		:param MediumLevelILInstruction original: the original IL Instruction you want to copy
 		:return: The index of the newly copied expression
 		"""
-		return self.expr(original.operation, original.raw_operands[0], original.raw_operands[1], original.raw_operands[2], original.raw_operands[3], original.raw_operands[4], original.size)
+		return self.expr(original.operation, original.raw_operands[0], original.raw_operands[1], original.raw_operands[2], original.raw_operands[3], original.raw_operands[4], original.size, loc)
 
 	def replace_expr(self, original: InstructionOrExpression, new: InstructionOrExpression) -> None:
 		"""
@@ -3514,7 +3533,7 @@ class MediumLevelILFunction:
 		"""
 		return core.BNMediumLevelILAddInstruction(self.handle, expr)
 
-	def goto(self, label: MediumLevelILLabel) -> ExpressionIndex:
+	def goto(self, label: MediumLevelILLabel,loc: ILSourceLocation = None) -> ExpressionIndex:
 		"""
 		``goto`` returns a goto expression which jumps to the provided MediumLevelILLabel.
 
@@ -3522,9 +3541,16 @@ class MediumLevelILFunction:
 		:return: the ExpressionIndex that jumps to the provided label
 		:rtype: ExpressionIndex
 		"""
+		if loc is not None and loc.valid:
+			return ExpressionIndex(
+				core.BNMediumLevelILGotoWithLocation(
+					self.handle, label.handle, loc.address, loc.sourceOperand
+				)
+			)
 		return ExpressionIndex(core.BNMediumLevelILGoto(self.handle, label.handle))
 
-	def if_expr(self, operand: ExpressionIndex, t: MediumLevelILLabel, f: MediumLevelILLabel) -> ExpressionIndex:
+
+	def if_expr(self, operand: ExpressionIndex, t: MediumLevelILLabel, f: MediumLevelILLabel, loc: ILSourceLocation = None) -> ExpressionIndex:
 		"""
 		``if_expr`` returns the ``if`` expression which depending on condition ``operand`` jumps to the MediumLevelILLabel
 		``t`` when the condition expression ``operand`` is non-zero and ``f`` when it's zero.
@@ -3535,8 +3561,144 @@ class MediumLevelILFunction:
 		:return: the ExpressionIndex for the if expression
 		:rtype: ExpressionIndex
 		"""
-		return ExpressionIndex(core.BNMediumLevelILIf(self.handle, operand, t.handle, f.handle))
+		if loc is not None and loc.valid:
+			return ExpressionIndex(
+				core.BNMediumLevelILIfWithLocation(
+					self.handle, operand, t.handle, f.handle, loc.address, loc.sourceOperand
+				)
+			)
+		return ExpressionIndex(
+			core.BNMediumLevelILIf(self.handle, operand, t.handle, f.handle)
+		)
+	def cmp_e(self, left: ExpressionIndex, right: ExpressionIndex, size: int = 0, loc: ILSourceLocation = None) -> ExpressionIndex:
+		"""
+		``cmp_e`` returns the comparison expression for equality (==) between ``left`` and ``right``.
 
+		:param ExpressionIndex left: The left operand of the comparison.
+		:param ExpressionIndex right: The right operand of the comparison.
+		:param int size: The size of the operands (optional, defaults to 0).
+		:param ILSourceLocation loc: The source location of the instruction (optional).
+		:return: The ExpressionIndex for the equality comparison expression.
+		:rtype: ExpressionIndex
+		"""
+		return self.expr(MediumLevelILOperation.MLIL_CMP_E, left, right, 0, 0, 0, size, loc)
+
+	def cmp_ne(self, left: ExpressionIndex, right: ExpressionIndex, size: int = 0, loc: ILSourceLocation = None) -> ExpressionIndex:
+		"""
+		``cmp_ne`` returns the comparison expression for inequality (!=) between ``left`` and ``right``.
+
+		:param ExpressionIndex left: The left operand of the comparison.
+		:param ExpressionIndex right: The right operand of the comparison.
+		:param int size: The size of the operands (optional, defaults to 0).
+		:param ILSourceLocation loc: The source location of the instruction (optional).
+		:return: The ExpressionIndex for the inequality comparison expression.
+		:rtype: ExpressionIndex
+		"""
+		return self.expr(MediumLevelILOperation.MLIL_CMP_NE, left, right, 0, 0, 0, size, loc)
+
+	def cmp_slt(self, left: ExpressionIndex, right: ExpressionIndex, size: int = 0, loc: ILSourceLocation = None) -> ExpressionIndex:
+		"""
+		``cmp_slt`` returns the comparison expression for signed less than (<) between ``left`` and ``right``.
+
+		:param ExpressionIndex left: The left operand of the comparison.
+		:param ExpressionIndex right: The right operand of the comparison.
+		:param int size: The size of the operands (optional, defaults to 0).
+		:param ILSourceLocation loc: The source location of the instruction (optional).
+		:return: The ExpressionIndex for the signed less than comparison expression.
+		:rtype: ExpressionIndex
+		"""
+		return self.expr(MediumLevelILOperation.MLIL_CMP_SLT, left, right, 0, 0, 0, size, loc)
+
+	def cmp_sle(self, left: ExpressionIndex, right: ExpressionIndex, size: int = 0, loc: ILSourceLocation = None) -> ExpressionIndex:
+		"""
+		``cmp_sle`` returns the comparison expression for signed less than or equal to (<=) between ``left`` and ``right``.
+
+		:param ExpressionIndex left: The left operand of the comparison.
+		:param ExpressionIndex right: The right operand of the comparison.
+		:param int size: The size of the operands (optional, defaults to 0).
+		:param ILSourceLocation loc: The source location of the instruction (optional).
+		:return: The ExpressionIndex for the signed less than or equal to comparison expression.
+		:rtype: ExpressionIndex
+		"""
+		return self.expr(MediumLevelILOperation.MLIL_CMP_SLE, left, right, 0, 0, 0, size, loc)
+
+	def cmp_sge(self, left: ExpressionIndex, right: ExpressionIndex, size: int = 0, loc: ILSourceLocation = None) -> ExpressionIndex:
+		"""
+		``cmp_sge`` returns the comparison expression for signed greater than or equal to (>=) between ``left`` and ``right``.
+
+		:param ExpressionIndex left: The left operand of the comparison.
+		:param ExpressionIndex right: The right operand of the comparison.
+		:param int size: The size of the operands (optional, defaults to 0).
+		:param ILSourceLocation loc: The source location of the instruction (optional).
+		:return: The ExpressionIndex for the signed greater than or equal to comparison expression.
+		:rtype: ExpressionIndex
+		"""
+		return self.expr(MediumLevelILOperation.MLIL_CMP_SGE, left, right, 0, 0, 0, size, loc)
+
+	def cmp_sgt(self, left: ExpressionIndex, right: ExpressionIndex, size: int = 0, loc: ILSourceLocation = None) -> ExpressionIndex:
+		"""
+		``cmp_sgt`` returns the comparison expression for signed greater than (>) between ``left`` and ``right``.
+
+		:param ExpressionIndex left: The left operand of the comparison.
+		:param ExpressionIndex right: The right operand of the comparison.
+		:param int size: The size of the operands (optional, defaults to 0).
+		:param ILSourceLocation loc: The source location of the instruction (optional).
+		:return: The ExpressionIndex for the signed greater than comparison expression.
+		:rtype: ExpressionIndex
+		"""
+		return self.expr(MediumLevelILOperation.MLIL_CMP_SGT, left, right, 0, 0, 0, size, loc)
+
+	def cmp_ult(self, left: ExpressionIndex, right: ExpressionIndex, size: int = 0, loc: ILSourceLocation = None) -> ExpressionIndex:
+		"""
+		``cmp_ult`` returns the comparison expression for unsigned less than (<) between ``left`` and ``right``.
+
+		:param ExpressionIndex left: The left operand of the comparison.
+		:param ExpressionIndex right: The right operand of the comparison.
+		:param int size: The size of the operands (optional, defaults to 0).
+		:param ILSourceLocation loc: The source location of the instruction (optional).
+		:return: The ExpressionIndex for the unsigned less than comparison expression.
+		:rtype: ExpressionIndex
+		"""
+		return self.expr(MediumLevelILOperation.MLIL_CMP_ULT, left, right, 0, 0, 0, size, loc)
+
+	def cmp_ule(self, left: ExpressionIndex, right: ExpressionIndex, size: int = 0, loc: ILSourceLocation = None) -> ExpressionIndex:
+		"""
+		``cmp_ule`` returns the comparison expression for unsigned less than or equal to (<=) between ``left`` and ``right``.
+
+		:param ExpressionIndex left: The left operand of the comparison.
+		:param ExpressionIndex right: The right operand of the comparison.
+		:param int size: The size of the operands (optional, defaults to 0).
+		:param ILSourceLocation loc: The source location of the instruction (optional).
+		:return: The ExpressionIndex for the unsigned less than or equal to comparison expression.
+		:rtype: ExpressionIndex
+		"""
+		return self.expr(MediumLevelILOperation.MLIL_CMP_ULE, left, right, 0, 0, 0, size, loc)
+
+	def cmp_uge(self, left: ExpressionIndex, right: ExpressionIndex, size: int = 0, loc: ILSourceLocation = None) -> ExpressionIndex:
+		"""
+		``cmp_uge`` returns the comparison expression for unsigned greater than or equal to (>=) between ``left`` and ``right``.
+
+		:param ExpressionIndex left: The left operand of the comparison.
+		:param ExpressionIndex right: The right operand of the comparison.
+		:param int size: The size of the operands (optional, defaults to 0).
+		:param ILSourceLocation loc: The source location of the instruction (optional).
+		:return: The ExpressionIndex for the unsigned greater than or equal to comparison expression.
+		:rtype: ExpressionIndex
+		"""
+		return self.expr(MediumLevelILOperation.MLIL_CMP_UGE, left, right, 0, 0, 0, size, loc)
+
+	def cmp_ugt(self, left: ExpressionIndex, right: ExpressionIndex, size: int = 0, loc: ILSourceLocation = None) -> ExpressionIndex:
+		"""
+		``cmp_ugt`` returns the comparison expression for unsigned greater than (>) between ``left`` and ``right``.
+
+		:param ExpressionIndex left: The left operand of the comparison.
+		:param ExpressionIndex right: The right operand of the comparison.
+		:param int size: The size of the operands (optional, defaults to 0).
+		:param ILSourceLocation loc: The source location of the instruction (optional).
+		:return: The ExpressionIndex for the unsigned greater than comparison expression.
+		:rtype: ExpressionIndex
+		"""
+		return self.expr(MediumLevelILOperation.MLIL_CMP_UGT, left, right, 0, 0, 0, size, loc)
 	def mark_label(self, label: MediumLevelILLabel) -> None:
 		"""
 		``mark_label`` assigns a MediumLevelILLabel to the current IL address.
